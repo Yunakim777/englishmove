@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grammar Engine 🚀</title>
+    
+    <!-- Шрифты и MediaPipe -->
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --accent-color: #8b5cf6;
+            --accent-glow: #a78bfa;
+            --correct-color: #10b981;
+            --wrong-color: #f43f5e;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Nunito', sans-serif; }
+        
+        body { 
+            background: var(--bg-color); 
+            background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%);
+            color: var(--text-main); 
+            display: flex; 
+            height: 100vh; 
+            overflow: hidden; 
+        }
+
+        .screen { display: none; width: 100%; height: 100%; }
+        .screen.active { display: flex; }
+
+        /* Глассморфизм (эффект стекла) */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        /* --- МЕНЮ --- */
+        #menu-screen {
+            justify-content: center;
+            align-items: center;
+        }
+        .menu-container {
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            animation: floatIn 0.5s ease-out;
+        }
+        .logo { font-size: 42px; margin-bottom: 30px; text-shadow: 0 0 20px var(--accent-glow); }
+        
+        select, button {
+            width: 100%;
+            padding: 18px;
+            margin: 12px 0;
+            border-radius: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            font-size: 18px;
+            font-weight: 900;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        select option { background: var(--bg-color); }
+        select:focus { border-color: var(--accent-color); outline: none; box-shadow: 0 0 15px var(--accent-color); }
+        
+        .start-btn { 
+            background: linear-gradient(135deg, #8b5cf6, #6366f1);
+            border: none; 
+            font-size: 22px; 
+            text-transform: uppercase;
+            box-shadow: 0 10px 20px rgba(99, 102, 241, 0.4);
+            margin-top: 20px;
+        }
+        .start-btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 15px 25px rgba(99, 102, 241, 0.6); }
+
+        /* --- ИГРОВОЙ ЭКРАН --- */
+        #game-screen { flex-direction: column; padding: 20px; gap: 20px; }
+        
+        /* Верхняя панель статистики */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            width: 100%;
+        }
+        .score-board { font-size: 28px; color: #fbbf24; text-shadow: 0 0 10px rgba(251, 191, 36, 0.5); }
+        .exit-btn { background: rgba(255,255,255,0.1); border: none; padding: 10px 20px; border-radius: 12px; color: white; cursor: pointer; }
+
+        /* Основная зона */
+        .game-area {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            height: calc(100% - 100px);
+        }
+
+        /* Карточка задания */
+        .task-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+        }
+        .sentence { font-size: 54px; line-height: 1.2; margin-bottom: 30px; }
+        
+        .timer-bar-container { width: 100%; height: 12px; background: rgba(0,0,0,0.5); border-radius: 6px; overflow: hidden; display: none; }
+        .timer-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #fbbf24, #f59e0b); transition: width 0.1s linear; }
+
+        .gesture-hint { font-size: 24px; color: #94a3b8; margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 16px;}
+
+        /* Камера */
+        .camera-section {
+            width: 45%;
+            position: relative;
+            border-radius: 24px;
+            overflow: hidden;
+            background: #000;
+            border: 4px solid rgba(255,255,255,0.1);
+        }
+        #webcam { display: none; }
+        #output_canvas { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+        /* Анимации ответов */
+        .correct-flash { 
+            animation: pulseCorrect 0.5s; 
+            border-color: var(--correct-color) !important;
+            box-shadow: 0 0 50px rgba(16, 185, 129, 0.5) !important;
+        }
+        .wrong-flash { 
+            animation: shakeWrong 0.5s; 
+            border-color: var(--wrong-color) !important;
+            box-shadow: 0 0 50px rgba(244, 63, 94, 0.5) !important;
+        }
+
+        @keyframes floatIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseCorrect { 0%, 100% {transform: scale(1);} 50% {transform: scale(1.05);} }
+        @keyframes shakeWrong { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-15px);} 75% {transform: translateX(15px);} }
+        
+        .loader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--accent-color); padding: 15px 30px; border-radius: 20px; z-index: 20; font-size: 20px; }
+    </style>
+</head>
+<body>
+
+    <!-- ЭКРАН МЕНЮ -->
+    <div id="menu-screen" class="screen active">
+        <div class="glass-panel menu-container">
+            <h1 class="logo">🧠 Grammar<br>Engine</h1>
+            
+            <select id="topic-select">
+                <option value="present_simple">🔥 Present Simple</option>
+                <option value="present_continuous">🌊 Present Continuous</option>
+                <option value="articles">💎 Articles (Артикли)</option>
+            </select>
+
+            <select id="level-select">
+                <option value="1">🕹️ Lvl 1: Левая рука = ✅, Правая = ❌</option>
+                <option value="2">⚡ Lvl 2: Хлопни, если верно!</option>
+            </select>
+
+            <button class="start-btn" onclick="startGame()">START GAME 🚀</button>
+        </div>
+    </div>
+
+    <!-- ИГРОВОЙ ЭКРАН -->
+    <div id="game-screen" class="screen">
+        <div class="glass-panel top-bar">
+            <h2 id="game-title" style="color: var(--accent-glow)">Topic</h2>
+            <div class="score-board">XP: <span id="score-val">0</span> ⚡</div>
+            <button class="exit-btn" onclick="exitToMenu()">🔙 Меню</button>
+        </div>
+
+        <div class="game-area">
+            <div class="glass-panel task-section" id="task-card">
+                <div class="sentence" id="sentence-display">Генерация уровня... 🎮</div>
+                <div class="timer-bar-container" id="timer-container"><div class="timer-bar" id="timer-bar"></div></div>
+                <div class="gesture-hint" id="hint-display">Включаем трекинг... 👀</div>
+            </div>
+
+            <div class="camera-section" id="camera-frame">
+                <div id="loading-indicator" class="loader">Loading AI... ⏳</div>
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const contentData = {
+            present_simple: [
+                { text: "He go to school every day.", isCorrect: false },
+                { text: "She likes eating pizza. 🍕", isCorrect: true },
+                { text: "They doesn't play Roblox.", isCorrect: false },
+                { text: "Do he live in Astana? 🏙️", isCorrect: false },
+                { text: "Water boils at 100°C. 💧", isCorrect: true }
+            ],
+            present_continuous: [
+                { text: "I am reading an interesting book now. 📖", isCorrect: true },
+                { text: "Look! The children is running. 🏃", isCorrect: false },
+                { text: "She walking to work at the moment.", isCorrect: false },
+                { text: "We are playing a game! 🎮", isCorrect: true }
+            ],
+            articles: [
+                { text: "I bought an useful item. 🎒", isCorrect: false },
+                { text: "He is a pro player. 🏆", isCorrect: true },
+                { text: "She wants to buy a banana. 🍌", isCorrect: true },
+                { text: "We saw an huge elephant. 🐘", isCorrect: false }
+            ]
+        };
+
+        let currentQuestions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let selectedLevel = "1";
+        let isProcessing = false;
+        
+        let level2Timer = null;
+        let level2TimeLeft = 100; 
+
+        let gestureHoldCounter = 0;
+        const CONFIRM_FRAMES = 12; 
+
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const loader = document.getElementById('loading-indicator');
+
+        const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
+        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        pose.onResults(onPoseResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await pose.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+        camera.start().then(() => loader.style.display = 'none');
+
+        function startGame() {
+            const topic = document.getElementById('topic-select').value;
+            const topicText = document.getElementById('topic-select').options[document.getElementById('topic-select').selectedIndex].text;
+            selectedLevel = document.getElementById('level-select').value;
+
+            currentQuestions = [...contentData[topic]].sort(() => Math.random() - 0.5);
+            currentQuestionIndex = 0;
+            score = 0;
+            document.getElementById('score-val').innerText = score;
+
+            document.getElementById('game-title').innerText = topicText;
+            
+            document.getElementById('menu-screen').classList.remove('active');
+            document.getElementById('game-screen').classList.add('active');
+
+            showQuestion();
+        }
+
+        function showQuestion() {
+            if (currentQuestionIndex >= currentQuestions.length) {
+                currentQuestions.sort(() => Math.random() - 0.5);
+                currentQuestionIndex = 0;
+            }
+
+            isProcessing = false;
+            gestureHoldCounter = 0;
+            
+            const card = document.getElementById('camera-frame');
+            card.classList.remove('correct-flash', 'wrong-flash');
+            
+            document.getElementById('sentence-display').innerText = currentQuestions[currentQuestionIndex].text;
+
+            if (selectedLevel === "2") {
+                document.getElementById('timer-container').style.display = 'block';
+                document.getElementById('hint-display').innerHTML = "👏 Хлопни, если <b>ПРАВИЛЬНО</b><br>🥶 Стой смирно, если <b>ОШИБКА</b>";
+                startLevel2Timer();
+            } else {
+                document.getElementById('timer-container').style.display = 'none';
+                document.getElementById('hint-display').innerHTML = "🤚 Левая = <b>ВЕРНО</b><br>✋ Правая = <b>ОШИБКА</b>";
+            }
+        }
+
+        function startLevel2Timer() {
+            clearInterval(level2Timer);
+            level2TimeLeft = 100;
+            const bar = document.getElementById('timer-bar');
+            
+            level2Timer = setInterval(() => {
+                if (isProcessing) return;
+                level2TimeLeft -= 1.5; 
+                bar.style.width = level2TimeLeft + "%";
+
+                if (level2TimeLeft <= 0) {
+                    clearInterval(level2Timer);
+                    evaluateAnswer(!currentQuestions[currentQuestionIndex].isCorrect);
+                }
+            }, 100);
+        }
+
+        function onPoseResults(results) {
+            canvasElement.width = results.image.width;
+            canvasElement.height = results.image.height;
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.poseLandmarks && !isProcessing && document.getElementById('game-screen').classList.contains('active')) {
+                // Киберпанк-скелет
+                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#a78bfa', lineWidth: 5});
+                drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#f8fafc', lineWidth: 2, radius: 5});
+                analyzePose(results.poseLandmarks);
+            }
+            canvasCtx.restore();
+        }
+
+        function analyzePose(landmarks) {
+            const hint = document.getElementById('hint-display');
+            const leftShoulder = landmarks[11], rightShoulder = landmarks[12];
+            const leftWrist = landmarks[15], rightWrist = landmarks[16];
+
+            if (!leftShoulder || !rightShoulder) return;
+            const sWidth = Math.abs(leftShoulder.x - rightShoulder.x);
+
+            if (selectedLevel === "1") {
+                const leftHandUp = leftWrist && leftWrist.y < leftShoulder.y;
+                const rightHandUp = rightWrist && rightWrist.y < rightShoulder.y;
+
+                if (leftHandUp && !rightHandUp) updateGestureStatus("ВЕРНО ✅", true);
+                else if (rightHandUp && !leftHandUp) updateGestureStatus("ОШИБКА ❌", false);
+                else resetGestureStatus("🤚 Левая = <b>ВЕРНО</b> | ✋ Правая = <b>ОШИБКА</b>");
+            }
+            else if (selectedLevel === "2" && leftWrist && rightWrist) {
+                const dx = leftWrist.x - rightWrist.x, dy = leftWrist.y - rightWrist.y;
+                if (Math.sqrt(dx*dx + dy*dy) / sWidth < 0.35) { 
+                    clearInterval(level2Timer);
+                    evaluateAnswer(currentQuestions[currentQuestionIndex].isCorrect);
+                }
+            }
+        }
+
+        function updateGestureStatus(text, userDecision) {
+            document.getElementById('hint-display').innerHTML = `Загрузка... ${text}`;
+            gestureHoldCounter++;
+            if (gestureHoldCounter >= CONFIRM_FRAMES) {
+                evaluateAnswer(userDecision === currentQuestions[currentQuestionIndex].isCorrect);
+            }
+        }
+
+        function resetGestureStatus(text) {
+            document.getElementById('hint-display').innerHTML = text;
+            gestureHoldCounter = 0;
+        }
+
+        function evaluateAnswer(isUserCorrect) {
+            isProcessing = true;
+            clearInterval(level2Timer);
+            const frame = document.getElementById('camera-frame');
+
+            if (isUserCorrect) {
+                frame.classList.add('correct-flash');
+                score += 100; // Gen Alpha любит большие числа
+                document.getElementById('score-val').innerText = score;
+                playTone(600, 0.1, 'sine');
+                setTimeout(() => playTone(900, 0.2, 'sine'), 100);
+            } else {
+                frame.classList.add('wrong-flash');
+                playTone(250, 0.4, 'sawtooth');
+            }
+
+            setTimeout(() => {
+                currentQuestionIndex++;
+                showQuestion();
+            }, 1500);
+        }
+
+        function playTone(freq, duration, type) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function exitToMenu() {
+            clearInterval(level2Timer);
+            document.getElementById('game-screen').classList.remove('active');
+            document.getElementById('menu-screen').classList.add('active');
+        }
+    </script>
+</body>
+</html>
